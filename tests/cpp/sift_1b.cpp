@@ -10,8 +10,9 @@
 using namespace std;
 using namespace hnswlib;
 
-extern int ext_M, ext_ef_construction, ext_ef, ext_k, ext_interq_multithread;
+extern int ext_M, ext_ef_construction, ext_ef, ext_k, ext_interq_multithread, ext_batch_size;
 extern std::string ext_dataset_path;
+long long node_counter;
 
 #define NUM_ANSWERS 100
 
@@ -181,27 +182,41 @@ test_approx(
     size_t k) {
     size_t correct = 0;
     size_t total = 0;
-    // uncomment to test in parallel mode:
-    // #pragma omp parallel for
-    for (int i = 0; i < qsize; i++) {
-        std::priority_queue<std::pair<int, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
-        std::priority_queue<std::pair<int, labeltype >> gt(answers[i]);
-        unordered_set<labeltype> g;
-        total += gt.size();
 
-        while (gt.size()) {
-            g.insert(gt.top().second);
-            gt.pop();
-        }
-
-        while (result.size()) {
-            if (g.find(result.top().second) != g.end()) {
-                correct++;
-            } else {
-            }
-            result.pop();
-        }
+    if (qsize % ext_batch_size != 0) {
+        cout << "qsize must be divisible by batch size\n";
+        exit(1);
     }
+    
+    cout << "qsize divided into " << qsize / ext_batch_size << " batches\n";
+    cout << "node counter: ";
+    for (int j = 0; j < qsize; j+=ext_batch_size) {
+        node_counter = 0;
+        // uncomment to test in parallel mode:
+        #pragma omp parallel for reduction(+ : correct, total) num_threads(ext_interq_multithread)
+        for (int i = j; i < j + ext_batch_size; i++) {
+            std::priority_queue<std::pair<int, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
+            std::priority_queue<std::pair<int, labeltype >> gt(answers[i]);
+            unordered_set<labeltype> g;
+            total += gt.size();
+
+            while (gt.size()) {
+                g.insert(gt.top().second);
+                gt.pop();
+            }
+
+            while (result.size()) {
+                if (g.find(result.top().second) != g.end()) {
+                    correct++;
+                } else {
+                }
+                result.pop();
+            }
+        }
+        cout << node_counter << " ";
+    }
+    cout << "\n";
+
     return 1.0f * correct / total;
 }
 
@@ -367,8 +382,7 @@ void sift_test1M() {
     cout << "Parsing gt:\n";
     get_gt(massQA, massQ, mass, vecsize, qsize, l2space, vecdim, answers, k);
     cout << "Loaded gt\n";
-    for (int i = 0; i < 1; i++)
-        test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
+    test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
     cout << "Actual memory usage: " << getCurrentRSS() / 1000000 << " Mb \n";
     return;
 }

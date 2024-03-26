@@ -10,6 +10,8 @@
 #include <list>
 #include <memory>
 
+extern long long node_counter;
+
 namespace hnswlib {
 typedef unsigned int tableint;
 typedef unsigned int linklistsizeint;
@@ -332,6 +334,9 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 stop_condition->add_point_to_result(getExternalLabel(ep_id), ep_data, dist);
             }
             candidate_set.emplace(-dist, ep_id);
+
+            node_counter++;
+
         } else {
             lowerBound = std::numeric_limits<dist_t>::max();
             candidate_set.emplace(-lowerBound, ep_id);
@@ -387,6 +392,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
 
                     char *currObj1 = (getDataByInternalId(candidate_id));
                     dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
+
+                    node_counter++;
 
                     bool flag_consider_candidate;
                     if (!bare_bone_search && stop_condition) {

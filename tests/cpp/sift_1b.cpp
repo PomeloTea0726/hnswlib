@@ -10,7 +10,7 @@
 using namespace std;
 using namespace hnswlib;
 
-extern int ext_M, ext_ef_construction, ext_ef, ext_k, ext_interq_multithread, ext_batch_size;
+extern int ext_M, ext_ef_construction, ext_ef, ext_k, ext_omp, ext_interq_multithread, ext_batch_size;
 extern std::string ext_dataset_path;
 long long node_counter;
 
@@ -190,31 +190,57 @@ test_approx(
     
     cout << "qsize divided into " << qsize / ext_batch_size << " batches\n";
     cout << "node counter: ";
-    for (int j = 0; j < qsize; j+=ext_batch_size) {
-        node_counter = 0;
-        // uncomment to test in parallel mode:
-        #pragma omp parallel for reduction(+ : correct, total) num_threads(ext_interq_multithread)
-        for (int i = j; i < j + ext_batch_size; i++) {
-            std::priority_queue<std::pair<int, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
-            std::priority_queue<std::pair<int, labeltype >> gt(answers[i]);
-            unordered_set<labeltype> g;
-            total += gt.size();
 
-            while (gt.size()) {
-                g.insert(gt.top().second);
-                gt.pop();
-            }
+    if (ext_omp)
+        for (int j = 0; j < qsize; j+=ext_batch_size) {
+            node_counter = 0;
+            #pragma omp parallel for reduction(+ : correct, total, node_counter) num_threads(ext_interq_multithread)
+            for (int i = j; i < j + ext_batch_size; i++) {
+                std::priority_queue<std::pair<int, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
+                std::priority_queue<std::pair<int, labeltype >> gt(answers[i]);
+                unordered_set<labeltype> g;
+                total += gt.size();
 
-            while (result.size()) {
-                if (g.find(result.top().second) != g.end()) {
-                    correct++;
-                } else {
+                while (gt.size()) {
+                    g.insert(gt.top().second);
+                    gt.pop();
                 }
-                result.pop();
+
+                while (result.size()) {
+                    if (g.find(result.top().second) != g.end()) {
+                        correct++;
+                    } else {
+                    }
+                    result.pop();
+                }
             }
+            cout << node_counter << " ";
         }
-        cout << node_counter << " ";
-    }
+
+    else
+        for (int j = 0; j < qsize; j+=ext_batch_size) {
+            node_counter = 0;
+            for (int i = j; i < j + ext_batch_size; i++) {
+                std::priority_queue<std::pair<int, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
+                std::priority_queue<std::pair<int, labeltype >> gt(answers[i]);
+                unordered_set<labeltype> g;
+                total += gt.size();
+
+                while (gt.size()) {
+                    g.insert(gt.top().second);
+                    gt.pop();
+                }
+
+                while (result.size()) {
+                    if (g.find(result.top().second) != g.end()) {
+                        correct++;
+                    } else {
+                    }
+                    result.pop();
+                }
+            }
+            cout << node_counter << " ";
+        }
     cout << "\n";
 
     return 1.0f * correct / total;
@@ -248,6 +274,7 @@ test_vs_recall(
         float time_us_per_query = stopw.getElapsedTimeMicro() / qsize;
 
         cout << ef << "\t" << recall << "\t" << time_us_per_query << " us\n";
+        cout << "accuracy: " << recall << "\n";
         if (recall > 1.0) {
             cout << recall << "\t" << time_us_per_query << " us\n";
             break;

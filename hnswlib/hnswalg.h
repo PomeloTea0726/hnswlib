@@ -335,6 +335,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
             }
             candidate_set.emplace(-dist, ep_id);
 
+            #pragma omp atomic
             node_counter++;
 
         } else {
@@ -393,6 +394,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                     char *currObj1 = (getDataByInternalId(candidate_id));
                     dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
+                    #pragma omp atomic
                     node_counter++;
 
                     bool flag_consider_candidate;

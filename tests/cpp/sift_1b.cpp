@@ -189,11 +189,13 @@ test_approx(
     }
     
     cout << "qsize divided into " << qsize / ext_batch_size << " batches\n";
-    cout << "node counter: ";
+    cout << "node counter and time for each batch:\n";
 
+    StopW stopw_batch = StopW();
     if (ext_omp)
         for (int j = 0; j < qsize; j+=ext_batch_size) {
             node_counter = 0;
+            stopw_batch.reset();
             #pragma omp parallel for reduction(+ : correct, total, node_counter) num_threads(ext_interq_multithread)
             for (int i = j; i < j + ext_batch_size; i++) {
                 std::priority_queue<std::pair<int, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
@@ -214,12 +216,15 @@ test_approx(
                     result.pop();
                 }
             }
+            float time_us_batch = stopw_batch.getElapsedTimeMicro();
             cout << node_counter << " ";
+            cout << time_us_batch << " us\n";
         }
 
     else
         for (int j = 0; j < qsize; j+=ext_batch_size) {
             node_counter = 0;
+            stopw_batch.reset();
             for (int i = j; i < j + ext_batch_size; i++) {
                 std::priority_queue<std::pair<int, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
                 std::priority_queue<std::pair<int, labeltype >> gt(answers[i]);
@@ -239,9 +244,10 @@ test_approx(
                     result.pop();
                 }
             }
+            float time_us_batch = stopw_batch.getElapsedTimeMicro();
             cout << node_counter << " ";
+            cout << time_us_batch << " us\n";
         }
-    cout << "\n";
 
     return 1.0f * correct / total;
 }
@@ -273,12 +279,9 @@ test_vs_recall(
         float recall = test_approx(massQ, vecsize, qsize, appr_alg, vecdim, answers, k);
         float time_us_per_query = stopw.getElapsedTimeMicro() / qsize;
 
-        cout << ef << "\t" << recall << "\t" << time_us_per_query << " us\n";
+        cout << "ef: " << ef << "\n";
+        cout << "time_per_query: " << time_us_per_query << " us\n";
         cout << "accuracy: " << recall << "\n";
-        if (recall > 1.0) {
-            cout << recall << "\t" << time_us_per_query << " us\n";
-            break;
-        }
     }
 }
 

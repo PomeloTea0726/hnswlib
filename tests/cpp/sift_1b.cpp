@@ -277,11 +277,11 @@ test_vs_recall(
         StopW stopw = StopW();
 
         float recall = test_approx(massQ, vecsize, qsize, appr_alg, vecdim, answers, k);
-        float time_us_per_query = stopw.getElapsedTimeMicro() / qsize;
+        float query_per_second = 1e6 * qsize / stopw.getElapsedTimeMicro();
 
         cout << "ef: " << ef << "\n";
-        cout << "time_per_query: " << time_us_per_query << " us\n";
-        cout << "accuracy: " << recall << "\n";
+        cout << "qps: " << query_per_second << "\n";
+        cout << "recall: " << recall << "\n";
     }
 }
 

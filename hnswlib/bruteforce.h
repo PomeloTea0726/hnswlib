@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <assert.h>
 
+extern long long node_counter;
+
 namespace hnswlib {
 template<typename dist_t>
 class BruteforceSearch : public AlgorithmInterface<dist_t> {
@@ -110,6 +112,7 @@ class BruteforceSearch : public AlgorithmInterface<dist_t> {
         if (cur_element_count == 0) return topResults;
         for (int i = 0; i < k; i++) {
             dist_t dist = fstdistfunc_(query_data, data_ + size_per_element_ * i, dist_func_param_);
+            node_counter++;
             labeltype label = *((labeltype*) (data_ + size_per_element_ * i + data_size_));
             if ((!isIdAllowed) || (*isIdAllowed)(label)) {
                 topResults.emplace(dist, label);
@@ -118,6 +121,7 @@ class BruteforceSearch : public AlgorithmInterface<dist_t> {
         dist_t lastdist = topResults.empty() ? std::numeric_limits<dist_t>::max() : topResults.top().first;
         for (int i = k; i < cur_element_count; i++) {
             dist_t dist = fstdistfunc_(query_data, data_ + size_per_element_ * i, dist_func_param_);
+            node_counter++;
             if (dist <= lastdist) {
                 labeltype label = *((labeltype *) (data_ + size_per_element_ * i + data_size_));
                 if ((!isIdAllowed) || (*isIdAllowed)(label)) {

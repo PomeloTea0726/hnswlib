@@ -196,7 +196,7 @@ test_approx(
         for (int j = 0; j < qsize; j+=ext_batch_size) {
             node_counter = 0;
             stopw_batch.reset();
-            #pragma omp parallel for reduction(+ : correct, total, node_counter) num_threads(ext_interq_multithread)
+            #pragma omp parallel for reduction(+ : correct, total, node_counter) num_threads(ext_interq_multithread) schedule(dynamic)
             for (int i = j; i < j + ext_batch_size; i++) {
                 std::priority_queue<std::pair<int, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
                 std::priority_queue<std::pair<int, labeltype >> gt(answers[i]);

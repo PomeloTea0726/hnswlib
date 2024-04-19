@@ -196,15 +196,12 @@ test_approx(
     cout << "qsize divided into " << qsize / ext_batch_size << " batches\n";
     cout << "node counter and time for each batch:\n";
 
-    // float temp = appr_alg.readgraph();
-    // cout << temp << "\n";
-
     StopW stopw_batch = StopW();
     if (ext_omp)
         for (int j = 0; j < qsize; j+=ext_batch_size) {
             node_counter = 0;
             stopw_batch.reset();
-            #pragma omp parallel for reduction(+ : correct, total, node_counter) num_threads(ext_interq_multithread) schedule(dynamic)
+            #pragma omp parallel for reduction(+ : correct, total, node_counter) num_threads(ext_interq_multithread)
             for (int i = j; i < j + ext_batch_size; i++) {
                 std::priority_queue<std::pair<int, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
                 std::priority_queue<std::pair<int, labeltype >> gt(answers[i]);
@@ -253,8 +250,8 @@ test_approx(
                 }
             }
             float time_us_batch = stopw_batch.getElapsedTimeMicro();
-            cout << node_counter << " ";
-            cout << time_us_batch << " us\n";
+            // cout << node_counter << " ";
+            // cout << time_us_batch << " us\n";
         }
 
     return 1.0f * correct / total;
@@ -276,62 +273,41 @@ test_vs_recall(
     // for (int i = 30; i < 100; i += 10) {
     //     efs.push_back(i);
     // }
-    // for (int i = 200; i < 600; i += 100) {
-    //     efs.push_back(i);
-    //     // efs.push_back(i);
-    // }
-    efs.push_back(ext_ef);
-    // efs.push_back(ext_ef);
-    // efs.push_back(ext_ef);
+    for (int i = 200; i < 300; i += 30) {
+        efs.push_back(i);
+    }
     // efs.push_back(ext_ef);
     // ofstream outfile("log_16_40_340_100.txt", std::ios::app);
     for (size_t ef : efs) {
-        // whilecounter = 0;
-        // paralleltime = 0;
-        // timevec[0][0] = 0;
-        // timevec[1][0] = 0;
-        // for (int i = 0; i <= multithread; i++) {
-        //     timevec[3][i] = 0;
-        //     timevec[5][i] = 0;
-        // }
-        // timevec[4][0] = 0;
-
-
+        whilecounter = 0;
+        paralleltime = 0;
         appr_alg.setEf(ef);
         StopW stopw = StopW();
 
         float recall = test_approx(massQ, vecsize, qsize, appr_alg, vecdim, answers, k);
         float query_per_second = 1e6 * qsize / stopw.getElapsedTimeMicro();
 
-        cout << "ef: " << ef << "\n";
-        cout << "qps: " << query_per_second << "\n";
-        cout << "recall: " << recall << "\n";
+        cout << "multicand: " << multicand << " multithread: " << multithread << " M: " << ext_M << " ef: " << ef << "\n";
 
-        // cout << "multicand: " << multicand << " multithread: " << multithread << " M: " << ext_M << " ef: " << ef << "\n";
-
-        // whilecounter /= qsize;
-        // cout << "whilecounter: " << whilecounter << "\n";
+        whilecounter /= qsize;
+        cout << "whilecounter: " << whilecounter << "\n";
         
-        // // cout << "ef: " << ef << "\n";
-        // cout << query_per_second << " ";
-        // cout << recall << "\n";
+        // cout << "ef: " << ef << "\n";
+        // outfile << query_per_second << " ";
+        // outfile << recall << "\n";
 
-        // // cout << "avg_cost: " << 1.0 * 1e6 / query_per_second << " us\n";
-        // cout << "0: " << timevec[0][0] / qsize << "\n";
+        // cout << "avg_cost: " << 1.0 * 1e6 / query_per_second << " us\n";
         // cout << "1: " << timevec[1][0] / qsize << "\n";
-        // double avg_time = 0;
-        // for (int i = 0; i < multithread; i++) {
-        //     avg_time += timevec[3][i] / qsize / multithread;
-        //     // cout << (timevec[3][i] / qsize) / whilecounter << "\n";
-        //     cout << (timevec[3][i] / qsize) << "\n";
-        // }
-        // double maxpath = (timevec[3][multithread] / qsize);
-        // cout << "avg time: " << avg_time << ", idle time: " << maxpath - avg_time << endl;
+        double sum_thrd = 0.0;
+        for (int i = 0; i < multithread; i++) {
+            sum_thrd += timevec[3][i] / qsize;
+            cout << timevec[3][i] / qsize << "\n";
+        }
 
-        // // double paratime = (paralleltime / qsize) / whilecounter;
-        // double paratime = (paralleltime / qsize);
-        // // cout << "parallel time = " << paratime << "\n";
-        // cout << "maxpath: " << maxpath << ", paratime: " << paratime << ", diff: " << paratime - maxpath << "\n";
+        cout << "p: " << paralleltime / qsize << "\n";
+        double avg_thrd = (sum_thrd / (double)multithread) / whilecounter;
+        double paratime = (paralleltime / qsize) / whilecounter;
+        cout << "avg_thrd: " << avg_thrd << ", paratime: " << paratime << ", diff: " << paratime - avg_thrd << "\n";
         // cout << "4: " << timevec[4][0] / qsize << "\n";
     }
     // outfile.close();
@@ -350,7 +326,7 @@ void sift_test1M() {
 
     size_t vecsize = subset_size_milllions * 1000000;
 
-    size_t qsize = 10000;
+    size_t qsize = 1;
     size_t vecdim = 128;
     char path_index[1024];
     char path_gt[1024];
@@ -465,98 +441,8 @@ void sift_test1M() {
     get_gt(massQA, massQ, mass, vecsize, qsize, l2space, vecdim, answers, k);
     cout << "Loaded gt\n";
     
-    multicand = 4, multithread = 1;
+    multicand = 16, multithread = 16;
     test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 8, multithread = 4;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 16, multithread = 4;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 32, multithread = 4;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 64, multithread = 4;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 2, multithread = 1;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 4, multithread = 1;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 8, multithread = 1;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 16, multithread = 1;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 32, multithread = 1;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-
-    // multicand = 4, multithread = 4;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 8, multithread = 8;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    
-    // multicand = 16, multithread = 16;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 32, multithread = 1;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 32, multithread = 2;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 32, multithread = 4;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 32, multithread = 8;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 32, multithread = 32;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-    // multicand = 64, multithread = 32;
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    // test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-
-
 
     // int multicand_list[] = {1,2,4,8,16,32};
     // int multithread_list[] = {1,2,4,8,16,32};
@@ -564,16 +450,6 @@ void sift_test1M() {
     //     for (int j = 0; j <= i; j++) {
     //         multicand = multicand_list[i];
     //         multithread = multithread_list[j];
-    //         test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
-    //     }
-    // }
-
-    // int multithread_list[] = {1,2,4};
-    // int multicand_list[] = {1,2,4,8,16,32};
-    // for (int i = 0; i < 3; i++) {
-    //     for (int j = i; j < 6; j++) {
-    //         multithread = multithread_list[i];
-    //         multicand = multicand_list[j];
     //         test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
     //     }
     // }

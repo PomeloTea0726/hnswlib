@@ -1,3 +1,7 @@
+/*
+    hnswalg_2.0: basic multicand but on latest version of hnswlib code.
+*/
+
 #pragma once
 
 #include "visited_list_pool.h"
@@ -9,8 +13,18 @@
 #include <unordered_set>
 #include <list>
 #include <memory>
+#include <omp.h>
+#include <unistd.h>
+
+// #define COLLECTM
+// #define COLLECTMP
 
 extern long long node_counter;
+extern int multicand, multithread;
+extern double whilecounter;
+
+double paralleltime;
+std::vector<std::vector<double>> timevec(6, std::vector<double>(32, 0.0));
 
 namespace hnswlib {
 typedef unsigned int tableint;
@@ -345,7 +359,25 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
 
         visited_array[ep_id] = visited_array_tag;
 
+        std::vector<int *> neighbors;
+        std::vector<size_t> neighbor_size;
+
+        
+        // int ctrl = 0;
         while (!candidate_set.empty()) {
+        // while (ctrl < 5) {
+        //     ctrl++;
+            
+            #ifdef COLLECTM
+                whilecounter++;
+                auto itime = std::chrono::steady_clock::now();
+                // double itime = omp_get_wtime();
+            #endif
+            
+
+            neighbors.clear();
+            neighbor_size.clear();
+
             std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
             dist_t candidate_dist = -current_node_pair.first;
 
@@ -363,85 +395,191 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 break;
             }
             candidate_set.pop();
+                #pragma omp atomic
+                node_counter++;
 
             tableint current_node_id = current_node_pair.second;
             int *data = (int *) get_linklist0(current_node_id);
+            neighbors.push_back(data);
             size_t size = getListCount((linklistsizeint*)data);
+            neighbor_size.push_back(size);
 //                bool cur_node_deleted = isMarkedDeleted(current_node_id);
             if (collect_metrics) {
                 metric_hops++;
                 metric_distance_computations+=size;
             }
+            
+            /* Other candidates */
+            for (int i = 1; i < multicand && !candidate_set.empty(); i++) {
+                current_node_pair = candidate_set.top();
 
-#ifdef USE_SSE
-            _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
-            _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
-            _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
-            _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
-#endif
+                candidate_dist = -current_node_pair.first;
 
-            for (size_t j = 1; j <= size; j++) {
-                int candidate_id = *(data + j);
-//                    if (candidate_id == 0) continue;
-
-                    #pragma omp atomic
-                    node_counter++;
-#ifdef USE_SSE
-                _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
-                _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
-                                _MM_HINT_T0);  ////////////
-#endif
-                if (!(visited_array[candidate_id] == visited_array_tag)) {
-                    visited_array[candidate_id] = visited_array_tag;
-
-                    char *currObj1 = (getDataByInternalId(candidate_id));
-                    dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
-
-                    bool flag_consider_candidate;
-                    if (!bare_bone_search && stop_condition) {
-                        flag_consider_candidate = stop_condition->should_consider_candidate(dist, lowerBound);
+                bool flag_stop_search;
+                if (bare_bone_search) {
+                    flag_stop_search = candidate_dist > lowerBound;
+                } else {
+                    if (stop_condition) {
+                        flag_stop_search = stop_condition->should_stop_search(candidate_dist, lowerBound);
                     } else {
-                        flag_consider_candidate = top_candidates.size() < ef || lowerBound > dist;
-                    }
-
-                    if (flag_consider_candidate) {
-                        candidate_set.emplace(-dist, candidate_id);
-#ifdef USE_SSE
-                        _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
-                                        offsetLevel0_,  ///////////
-                                        _MM_HINT_T0);  ////////////////////////
-#endif
-
-                        if (bare_bone_search || 
-                            (!isMarkedDeleted(candidate_id) && ((!isIdAllowed) || (*isIdAllowed)(getExternalLabel(candidate_id))))) {
-                            top_candidates.emplace(dist, candidate_id);
-                            if (!bare_bone_search && stop_condition) {
-                                stop_condition->add_point_to_result(getExternalLabel(candidate_id), currObj1, dist);
-                            }
-                        }
-
-                        bool flag_remove_extra = false;
-                        if (!bare_bone_search && stop_condition) {
-                            flag_remove_extra = stop_condition->should_remove_extra();
-                        } else {
-                            flag_remove_extra = top_candidates.size() > ef;
-                        }
-                        while (flag_remove_extra) {
-                            tableint id = top_candidates.top().second;
-                            top_candidates.pop();
-                            if (!bare_bone_search && stop_condition) {
-                                stop_condition->remove_point_from_result(getExternalLabel(id), getDataByInternalId(id), dist);
-                                flag_remove_extra = stop_condition->should_remove_extra();
-                            } else {
-                                flag_remove_extra = top_candidates.size() > ef;
-                            }
-                        }
-
-                        if (!top_candidates.empty())
-                            lowerBound = top_candidates.top().first;
+                        flag_stop_search = candidate_dist > lowerBound && top_candidates.size() == ef;
                     }
                 }
+                if (flag_stop_search) {
+                    break;
+                }
+                candidate_set.pop();
+                #pragma omp atomic
+                node_counter++;
+
+                current_node_id = current_node_pair.second;
+                int *data = (int *) get_linklist0(current_node_id);
+                neighbors.push_back(data);
+                size = getListCount((linklistsizeint*)data);
+                neighbor_size.push_back(size);
+                // bool cur_node_deleted = isMarkedDeleted(current_node_id);
+                if (collect_metrics) {
+                    metric_hops++;
+                    metric_distance_computations+=size;
+                }
             }
+
+            #ifdef COLLECTM
+                auto ftime = std::chrono::steady_clock::now();
+                timevec[1][0] += (std::chrono::duration_cast<std::chrono::microseconds>(ftime - itime).count());
+                // double ftime = omp_get_wtime();
+                // timevec[1][0] += (ftime - itime) * 1e6;
+            #endif
+
+// #ifdef USE_SSE
+//             _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
+//             _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
+//             _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
+//             _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
+// #endif
+
+            std::vector<std::vector<std::pair<dist_t, int>>> global_cand(multithread);
+            std::vector<std::vector<std::pair<dist_t, int>>> global_top(multithread);
+
+            size_t s = neighbors.size();
+
+            #ifdef COLLECTM
+                auto begintime = std::chrono::steady_clock::now();
+            #endif
+
+            // #pragma omp parallel num_threads(multithread) 
+            {
+                #ifdef COLLECTMP
+                    auto itime = std::chrono::steady_clock::now();
+                #endif
+                int threadid = omp_get_thread_num();
+
+                // #pragma omp for 
+                for (size_t j = 0; j < s; j++) {
+                    
+                    for (size_t z = 1; z <= neighbor_size[j]; z++) {
+                        int candidate_id = *(neighbors[j] + z);
+
+    //                    if (candidate_id == 0) continue;
+
+    // #ifdef USE_SSE
+    //                     _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
+    //                     _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
+    //                                     _MM_HINT_T0);  ////////////
+    // #endif
+                        if (!(visited_array[candidate_id] == visited_array_tag)) {
+                            visited_array[candidate_id] = visited_array_tag;
+
+                            char *currObj1 = (getDataByInternalId(candidate_id));
+                            dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
+
+                            // #pragma omp atomic
+                            // node_counter++;
+
+                            bool flag_consider_candidate;
+                            if (!bare_bone_search && stop_condition) {
+                                flag_consider_candidate = stop_condition->should_consider_candidate(dist, lowerBound);
+                            } else {
+                                flag_consider_candidate = top_candidates.size() < ef || lowerBound > dist;
+                            }
+
+                            if (flag_consider_candidate) {
+                                global_cand[threadid].push_back(std::make_pair(-dist, candidate_id));
+
+                                if (bare_bone_search || 
+                                    (!isMarkedDeleted(candidate_id) && ((!isIdAllowed) || (*isIdAllowed)(getExternalLabel(candidate_id))))) {
+                                    global_top[threadid].push_back(std::make_pair(dist, candidate_id));
+                                    if (!bare_bone_search && stop_condition) {
+                                        stop_condition->add_point_to_result(getExternalLabel(candidate_id), currObj1, dist);
+                                    }
+                                }
+                            }
+                        }
+                    }                
+                }
+
+                #ifdef COLLECTMP
+                    auto ftime = std::chrono::steady_clock::now();
+                    timevec[5][threadid] = (std::chrono::duration_cast<std::chrono::microseconds>(ftime - itime).count());
+                    timevec[3][threadid] += timevec[5][threadid];
+                    // std::cout << "here> " << timevec[3][threadid] << std::endl;
+                #endif
+
+            }
+
+            // for(int i = 0; i < multithread; i++) {
+            //     std::cout << "=> " << timevec[5][i] << std::endl;
+            // }
+            // for(int i = 0; i < multithread; i++) {
+            //     std::cout << "+=> " << timevec[3][i] << std::endl;
+            // }
+            
+            #ifdef COLLECTM
+                auto endtime = std::chrono::steady_clock::now();
+                paralleltime += (std::chrono::duration_cast<std::chrono::microseconds>(endtime - begintime).count());
+
+                // std::cout << timevec[3][3] << std::endl;
+                // std::cout << timevec[3][multithread] << std::endl;
+
+                timevec[3][multithread] += *(std::max_element(timevec[5].begin(), timevec[5].begin() + multithread));
+                // if (timevec[3][multithread] < timevec[3][3])
+                //     std::cout << "1111111" << std::endl;
+
+                auto itime_ = std::chrono::steady_clock::now();
+                // double itime_ = omp_get_wtime();
+            #endif
+
+            for (auto local_cand : global_cand) {
+                for (auto pair : local_cand) {
+                    dist_t dist = pair.first;
+                    int candidate_id = pair.second;
+                    candidate_set.emplace(dist, candidate_id);
+                }
+            }
+
+            for (auto local_top : global_top) {
+                for (auto pair : local_top) {
+                    dist_t dist = pair.first;
+                    int candidate_id = pair.second;
+                    top_candidates.emplace(dist, candidate_id);
+                }
+            }
+            
+            int diff = top_candidates.size() - ef;
+            if (diff > 0) {
+                for (int i = 0; i < diff; i++)
+                    top_candidates.pop();
+            }
+
+            if (!top_candidates.empty())
+                lowerBound = top_candidates.top().first;
+
+            #ifdef COLLECTM
+                auto ftime_ = std::chrono::steady_clock::now();
+                timevec[4][0] += (std::chrono::duration_cast<std::chrono::microseconds>(ftime_ - itime_).count());
+                // double ftime_ = omp_get_wtime();
+                // timevec[4][0] += (ftime_ - itime_) * 1e6;
+            #endif
         }
 
         visited_list_pool_->releaseVisitedList(vl);
@@ -1284,38 +1422,38 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
         tableint currObj = enterpoint_node_;
         dist_t curdist = fstdistfunc_(query_data, getDataByInternalId(enterpoint_node_), dist_func_param_);
 
-        for (int level = maxlevel_; level > 0; level--) {
-            bool changed = true;
-            while (changed) {
-                changed = false;
-                unsigned int *data;
+        // for (int level = maxlevel_; level > 0; level--) {
+        //     bool changed = true;
+        //     while (changed) {
+        //         changed = false;
+        //         unsigned int *data;
 
-                data = (unsigned int *) get_linklist(currObj, level);
-                int size = getListCount(data);
-                metric_hops++;
-                metric_distance_computations+=size;
+        //         data = (unsigned int *) get_linklist(currObj, level);
+        //         int size = getListCount(data);
+        //         metric_hops++;
+        //         metric_distance_computations+=size;
 
-                tableint *datal = (tableint *) (data + 1);
-                for (int i = 0; i < size; i++) {
-                    tableint cand = datal[i];
-                    if (cand < 0 || cand > max_elements_)
-                        throw std::runtime_error("cand error");
-                    dist_t d = fstdistfunc_(query_data, getDataByInternalId(cand), dist_func_param_);
+        //         tableint *datal = (tableint *) (data + 1);
+        //         for (int i = 0; i < size; i++) {
+        //             tableint cand = datal[i];
+        //             if (cand < 0 || cand > max_elements_)
+        //                 throw std::runtime_error("cand error");
+        //             dist_t d = fstdistfunc_(query_data, getDataByInternalId(cand), dist_func_param_);
 
-                    if (d < curdist) {
-                        curdist = d;
-                        currObj = cand;
-                        changed = true;
-                    }
-                }
-            }
-        }
+        //             if (d < curdist) {
+        //                 curdist = d;
+        //                 currObj = cand;
+        //                 changed = true;
+        //             }
+        //         }
+        //     }
+        // }
 
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
         bool bare_bone_search = !num_deleted_ && !isIdAllowed;
         if (bare_bone_search) {
             top_candidates = searchBaseLayerST<true>(
-                    currObj, query_data, std::max(ef_, k), isIdAllowed);
+                    (tableint)999945, query_data, std::max(ef_, k), isIdAllowed);
         } else {
             top_candidates = searchBaseLayerST<false>(
                     currObj, query_data, std::max(ef_, k), isIdAllowed);
@@ -1330,6 +1468,30 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
             top_candidates.pop();
         }
         return result;
+    }
+
+    float
+    readgraph () const {
+        // randomly generate unsigned int between 0, 999945
+        unsigned int random_id;
+
+        float temp;
+        char *rawdata;
+        float *data;
+        
+        auto itime0 = std::chrono::steady_clock::now();
+        for (int j = 0; j < 10000; j++) {
+            random_id = rand() % 999945;
+            rawdata = getDataByInternalId(random_id);
+            data = (float *) rawdata;
+            for (int i = 0; i < 128; i++) {
+                temp = std::max(data[i], temp);
+            }
+        }
+        auto ftime0 = std::chrono::steady_clock::now();
+        timevec[0][0] += std::chrono::duration_cast<std::chrono::microseconds>(ftime0 - itime0).count();
+        
+        return temp;
     }
 
 

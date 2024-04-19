@@ -9,8 +9,15 @@
 #include <unordered_set>
 #include <list>
 #include <memory>
+#include <omp.h>
+#include <unistd.h>
 
 extern long long node_counter;
+
+double itime, ftime;
+double begintime, endtime, paralleltime;
+std::vector<std::vector<double>> timevec(6, std::vector<double>(8, 0.0));
+int while_count = 0.0;
 
 namespace hnswlib {
 typedef unsigned int tableint;
@@ -346,6 +353,9 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
         visited_array[ep_id] = visited_array_tag;
 
         while (!candidate_set.empty()) {
+            while_count++;
+            itime = omp_get_wtime();
+
             std::pair<dist_t, tableint> current_node_pair = candidate_set.top();
             dist_t candidate_dist = -current_node_pair.first;
 
@@ -372,6 +382,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 metric_hops++;
                 metric_distance_computations+=size;
             }
+            ftime = omp_get_wtime();
+            timevec[1][0] += (ftime - itime) * 1e6;
 
 #ifdef USE_SSE
             _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
@@ -380,12 +392,10 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
             _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
 #endif
 
+            begintime = omp_get_wtime();
             for (size_t j = 1; j <= size; j++) {
                 int candidate_id = *(data + j);
 //                    if (candidate_id == 0) continue;
-
-                    #pragma omp atomic
-                    node_counter++;
 #ifdef USE_SSE
                 _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
                 _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
@@ -396,6 +406,9 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
 
                     char *currObj1 = (getDataByInternalId(candidate_id));
                     dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
+
+                    #pragma omp atomic
+                    node_counter++;
 
                     bool flag_consider_candidate;
                     if (!bare_bone_search && stop_condition) {
@@ -442,6 +455,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                     }
                 }
             }
+            endtime = omp_get_wtime();
+            paralleltime += (endtime - begintime) * 1e6;
         }
 
         visited_list_pool_->releaseVisitedList(vl);

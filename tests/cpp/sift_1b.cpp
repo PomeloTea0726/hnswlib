@@ -3,6 +3,7 @@
 #include <queue>
 #include <chrono>
 #include "../../hnswlib/hnswlib.h"
+#include "../../hnswlib/load_data.h"
 
 
 #include <unordered_set>
@@ -10,11 +11,23 @@
 using namespace std;
 using namespace hnswlib;
 
-extern int ext_M, ext_ef_construction, ext_ef, ext_k, ext_omp, ext_interq_multithread, ext_batch_size;
-extern std::string ext_dataset_path;
-long long node_counter;
+extern int ext_ef, ext_omp, ext_interq_multithread, ext_batch_size;
+extern char* ext_dataset;
+extern std::string ext_hnsw_index_file;
 
-#define NUM_ANSWERS 100
+double calculate_recall(std::vector<std::vector<unsigned>>& I, std::vector<std::vector<unsigned>>& gt, int k) {
+    assert(I[0].size() >= k);
+    assert(gt[0].size() >= k);
+    int nq = I.size();
+    int total_intersect = 0;
+    for (int i = 0; i < nq; ++i) {
+        std::vector<int> intersection;
+        std::set_intersection(I[i].begin(), I[i].begin() + k, gt[i].begin(), gt[i].begin() + k, std::back_inserter(intersection));
+        int n_intersect = intersection.size();
+        total_intersect += n_intersect;
+    }
+    return static_cast<double>(total_intersect) / (nq * k);
+}
 
 
 class StopW {
@@ -151,37 +164,13 @@ static size_t getCurrentRSS() {
 
 
 static void
-get_gt(
-    unsigned int *massQA,
-    unsigned char *massQ,
-    unsigned char *mass,
-    size_t vecsize,
-    size_t qsize,
-    L2SpaceI &l2space,
-    size_t vecdim,
-    vector<std::priority_queue<std::pair<int, labeltype>>> &answers,
-    size_t k) {
-    (vector<std::priority_queue<std::pair<int, labeltype >>>(qsize)).swap(answers);
-    DISTFUNC<int> fstdistfunc_ = l2space.get_dist_func();
-    cout << qsize << "\n";
-    for (int i = 0; i < qsize; i++) {
-        for (int j = 0; j < k; j++) {
-            answers[i].emplace(0.0f, massQA[NUM_ANSWERS * i + j]);
-        }
-    }
-}
-
-static float
 test_approx(
-    unsigned char *massQ,
+    float *massQ,
     size_t vecsize,
     size_t qsize,
-    HierarchicalNSW<int> &appr_alg,
+    HierarchicalNSW<float> &appr_alg,
     size_t vecdim,
-    vector<std::priority_queue<std::pair<int, labeltype>>> &answers,
-    size_t k) {
-    size_t correct = 0;
-    size_t total = 0;
+    std::vector<std::vector<unsigned>> &answers) {
 
     if (qsize % ext_batch_size != 0) {
         cout << "qsize must be divisible by batch size\n";
@@ -189,100 +178,83 @@ test_approx(
     }
     
     cout << "qsize divided into " << qsize / ext_batch_size << " batches\n";
-    cout << "node counter and time for each batch:\n";
+    cout << "time for each batch:\n";
 
     StopW stopw_batch = StopW();
+    std::vector<std::priority_queue<std::pair<float, hnswlib::labeltype>>> res(qsize);
+    float total_time = 0.0;
     if (ext_omp)
         for (int j = 0; j < qsize; j+=ext_batch_size) {
-            node_counter = 0;
             stopw_batch.reset();
-            #pragma omp parallel for reduction(+ : correct, total, node_counter) num_threads(ext_interq_multithread) schedule(dynamic)
+            #pragma omp parallel for num_threads(ext_interq_multithread) schedule(dynamic)
             for (int i = j; i < j + ext_batch_size; i++) {
-                std::priority_queue<std::pair<int, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
-                std::priority_queue<std::pair<int, labeltype >> gt(answers[i]);
-                unordered_set<labeltype> g;
-                total += gt.size();
-
-                while (gt.size()) {
-                    g.insert(gt.top().second);
-                    gt.pop();
-                }
-
-                while (result.size()) {
-                    if (g.find(result.top().second) != g.end()) {
-                        correct++;
-                    } else {
-                    }
-                    result.pop();
-                }
+                res[i] = appr_alg.searchKnn(massQ + vecdim * i, ext_ef);
             }
             float time_us_batch = stopw_batch.getElapsedTimeMicro();
-            cout << node_counter << " ";
+            total_time += time_us_batch;
             cout << time_us_batch << " us\n";
         }
 
     else
         for (int j = 0; j < qsize; j+=ext_batch_size) {
-            node_counter = 0;
             stopw_batch.reset();
             for (int i = j; i < j + ext_batch_size; i++) {
-                std::priority_queue<std::pair<int, labeltype >> result = appr_alg.searchKnn(massQ + vecdim * i, k);
-                std::priority_queue<std::pair<int, labeltype >> gt(answers[i]);
-                unordered_set<labeltype> g;
-                total += gt.size();
-
-                while (gt.size()) {
-                    g.insert(gt.top().second);
-                    gt.pop();
-                }
-
-                while (result.size()) {
-                    if (g.find(result.top().second) != g.end()) {
-                        correct++;
-                    } else {
-                    }
-                    result.pop();
-                }
+                res[i] = appr_alg.searchKnn(massQ + vecdim * i, ext_ef);
             }
             float time_us_batch = stopw_batch.getElapsedTimeMicro();
-            cout << node_counter << " ";
+            total_time += time_us_batch;
             cout << time_us_batch << " us\n";
         }
+    
+    // reverse the priority queue and store the result in I
+    std::vector<std::vector<unsigned>> I(qsize, std::vector<unsigned>(ext_ef));
+    for (int i = 0; i < qsize; i++) {
+        for (int j = 0; j < ext_ef; j++) {
+            I[i][ext_ef - 1 - j] = res[i].top().second;
+            res[i].pop();
+        }
+    }
 
-    return 1.0f * correct / total;
+    // // print I[0]
+    // for (int i = 0; i < I[0].size(); i++) {
+    //     std::cout << I[0][i] << " ";
+    // }
+    // // print answers[0]
+    // std::cout << "\n\n\n";
+    // for (int i = 0; i < answers[0].size(); i++) {
+    //     std::cout << answers[0][i] << " ";
+    // }
+
+    double recall_1, recall_10;
+    if (ext_ef < 10) {
+        recall_1 = calculate_recall(I, answers, 1);
+        std::cout << "recall_1: " << recall_1 << std::endl;
+    }
+    else {
+        recall_1 = calculate_recall(I, answers, 1);
+        recall_10 = calculate_recall(I, answers, 10);
+        std::cout << "recall_1: " << recall_1 << std::endl;
+        std::cout << "recall_10: " << recall_10 << std::endl;
+    }
+
+    double qps = 1e6 * (float)qsize / total_time;
+    std::cout << "qps: " << qps << std::endl;
+
+    return;
 }
 
 static void
 test_vs_recall(
-    unsigned char *massQ,
+    float *massQ,
     size_t vecsize,
     size_t qsize,
-    HierarchicalNSW<int> &appr_alg,
+    HierarchicalNSW<float> &appr_alg,
     size_t vecdim,
-    vector<std::priority_queue<std::pair<int, labeltype>>> &answers,
-    size_t k) {
-    vector<size_t> efs;  // = { 10,10,10,10,10 };
-    // for (int i = k; i < 30; i++) {
-    //     efs.push_back(i);
-    // }
-    // for (int i = 30; i < 100; i += 10) {
-    //     efs.push_back(i);
-    // }
-    // for (int i = 100; i < 500; i += 40) {
-    //     efs.push_back(i);
-    // }
-    efs.push_back(ext_ef);
-    for (size_t ef : efs) {
-        appr_alg.setEf(ef);
-        StopW stopw = StopW();
+    std::vector<std::vector<unsigned>> &answers) {
 
-        float recall = test_approx(massQ, vecsize, qsize, appr_alg, vecdim, answers, k);
-        float query_per_second = 1e6 * qsize / stopw.getElapsedTimeMicro();
+    appr_alg.setEf(ext_ef);
 
-        cout << "ef: " << ef << "\n";
-        cout << "qps: " << query_per_second << "\n";
-        cout << "recall: " << recall << "\n";
-    }
+    test_approx(massQ, vecsize, qsize, appr_alg, vecdim, answers);
 }
 
 inline bool exists_test(const std::string &name) {
@@ -291,128 +263,127 @@ inline bool exists_test(const std::string &name) {
 }
 
 
-void sift_test1M() {
-    int subset_size_milllions = 1;
-    int efConstruction = ext_ef_construction; // original value = 40
-    int M = ext_M;
-
-    size_t vecsize = subset_size_milllions * 1000000;
-
-    size_t qsize = 10000;
-    size_t vecdim = 128;
-    char path_index[1024];
-    char path_gt[1024];
-
-    const string path_q = ext_dataset_path + "sift_query.fvecs";
-    const string path_data = ext_dataset_path + "sift_base.fvecs";
-    snprintf(path_index, sizeof(path_index), "sift1m_ef_%d_M_%d.bin", efConstruction, M);
-
-    snprintf(path_gt, sizeof(path_gt), "%s/sift_groundtruth.ivecs", ext_dataset_path.c_str());
-
-    float *massb = new float[vecdim];
-
-    cout << "Loading GT:\n";
-    ifstream inputGT(path_gt, ios::binary);
-    unsigned int *massQA = new unsigned int[qsize * NUM_ANSWERS];
+void hnsw_search() {
+    float* data_load = NULL;
+    unsigned points_num, dim;
+    float* query_load = NULL;
+    unsigned query_num, query_dim;
+    std::vector<std::vector<unsigned>> gt;
+    if (strcmp(ext_dataset, "SIFT1M") == 0) {
+        std::cout << "load base vectors..." << std::endl;
+        points_num = 1e6;
+        load_data_bvecs("/mnt/scratch/wenqi/Faiss_experiments/bigann/bigann_base.bvecs", data_load, dim, points_num);
+        std::cout << "load query vectors..." << std::endl;
+        query_num = 1e4;
+        load_data_bvecs("/mnt/scratch/wenqi/Faiss_experiments/bigann/bigann_query.bvecs", query_load, query_dim, query_num);
+        load_data_ivecs("/mnt/scratch/wenqi/Faiss_experiments/bigann/gnd/idx_1M.ivecs", gt, query_num);
+    }
+    else if (strcmp(ext_dataset, "SIFT10M") == 0) {
+        points_num = 1e7;
+        load_data_bvecs("/mnt/scratch/wenqi/Faiss_experiments/bigann/bigann_base.bvecs", data_load, dim, points_num);
+        query_num = 1e4;
+        load_data_bvecs("/mnt/scratch/wenqi/Faiss_experiments/bigann/bigann_query.bvecs", query_load, query_dim, query_num);
+        load_data_ivecs("/mnt/scratch/wenqi/Faiss_experiments/bigann/gnd/idx_10M.ivecs", gt, query_num);
+    }
+    else if (strcmp(ext_dataset, "SBERT1M") == 0) {
+        points_num = 1e6;
+        load_data_SBERT("/mnt/scratch/wenqi/Faiss_experiments/sbert/sbert1M.fvecs", data_load, points_num);
+        dim = 384;
+        query_num = 1e4;
+        load_data_SBERT("/mnt/scratch/wenqi/Faiss_experiments/sbert/query_10K.fvecs", query_load, query_num);
+        query_dim = 384;
+        load_data_deep_ibin("/mnt/scratch/wenqi/Faiss_experiments/sbert/gt_idx_1M.ibin", gt, query_num);
+    }
+    else if (strcmp(ext_dataset, "Deep1M") == 0) {
+        points_num = 1e6;
+        load_data_deep_fbin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/base.1B.fbin", data_load, points_num);
+        dim = 96;
+        query_num = 1e4;
+        load_data_deep_fbin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/query.public.10K.fbin", query_load, query_num);
+        query_dim = 96;
+        load_data_deep_ibin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/gt_idx_1M.ibin", gt, query_num);
+    }
+    else if (strcmp(ext_dataset, "Deep10M") == 0) {
+        points_num = 1e7;
+        load_data_deep_fbin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/base.1B.fbin", data_load, points_num);
+        dim = 96;
+        query_num = 1e4;
+        load_data_deep_fbin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/query.public.10K.fbin", query_load, query_num);
+        query_dim = 96;
+        load_data_deep_ibin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/gt_idx_10M.ibin", gt, query_num);
+    }
+    else {
+        std::cout << "Unknown dataset" << std::endl;
+        exit(-1);
+    }
+    assert(dim == query_dim);
     
-    for (int i = 0; i < qsize; i++) {
-        int t;
-        inputGT.read((char *) &t, 4);
-        inputGT.read((char *) (massQA + NUM_ANSWERS * i), t * 4);
-        if (t != NUM_ANSWERS) {
-            cout << "err";
-            return;
-        }
-    }
-    inputGT.close();
+    size_t vecsize = (size_t)points_num;
+    size_t qsize = (size_t)query_num;
+    size_t vecdim = (size_t)dim;
 
-    cout << "Loading queries:\n";
-    unsigned char *massQ = new unsigned char[qsize * vecdim];
-    ifstream inputQ(path_q, ios::binary);
+    // int in = 0;
+    L2Space l2space(vecdim);
 
-    for (int i = 0; i < qsize; i++) {
-        int in = 0;
-        inputQ.read((char *) &in, 4);
-        if (in != 128) {
-            cout << "file error";
-            exit(1);
-        }
-        inputQ.read((char *) massb, in * 4);
-        for (int j = 0; j < vecdim; j++) {
-            massQ[i * vecdim + j] = static_cast<unsigned char>(massb[j]);
-        }
-    }
-    inputQ.close();
-
-
-    unsigned char *mass = new unsigned char[vecdim];
-    ifstream input(path_data, ios::binary);
-    int in = 0;
-    L2SpaceI l2space(vecdim);
-
-    HierarchicalNSW<int> *appr_alg;
-    if (exists_test(path_index)) {
-        cout << "Loading index from " << path_index << ":\n";
-        appr_alg = new HierarchicalNSW<int>(&l2space, path_index, false);
+    HierarchicalNSW<float> *appr_alg;
+    if (exists_test(ext_hnsw_index_file)) {
+        cout << "Loading index from " << ext_hnsw_index_file << ":\n";
+        appr_alg = new HierarchicalNSW<float>(&l2space, ext_hnsw_index_file, false);
         cout << "Actual memory usage: " << getCurrentRSS() / 1000000 << " Mb \n";
     } else {
-        cout << "Building index:\n";
-        appr_alg = new HierarchicalNSW<int>(&l2space, vecsize, M, efConstruction);
+        cout << "Error: index file not found\n";
+        return;
+//         cout << "Building index:\n";
+//         appr_alg = new HierarchicalNSW<int>(&l2space, vecsize, M, efConstruction);
 
-        input.read((char *) &in, 4);
-        if (in != 128) {
-            cout << "file error";
-            exit(1);
-        }
-        input.read((char *) massb, in * 4);
+//         input.read((char *) &in, 4);
+//         if (in != 128) {
+//             cout << "file error";
+//             exit(1);
+//         }
+//         input.read((char *) massb, in * 4);
 
-        for (int j = 0; j < vecdim; j++) {
-            mass[j] = static_cast<unsigned char>(massb[j]);
-        }
+//         for (int j = 0; j < vecdim; j++) {
+//             mass[j] = static_cast<unsigned char>(massb[j]);
+//         }
 
-        appr_alg->addPoint((void *) (mass), (size_t) 0);
-        int j1 = 0;
-        StopW stopw = StopW();
-        StopW stopw_full = StopW();
-        size_t report_every = 100000;
-#pragma omp parallel for
-        for (int i = 1; i < vecsize; i++) {
-            unsigned char mass[vecdim];
-            int j2 = 0;
-#pragma omp critical
-            {
-                input.read((char *) &in, 4);
-                if (in != 128) {
-                    cout << "file error";
-                    exit(1);
-                }
-                input.read((char *) massb, in * 4);
-                for (int j = 0; j < vecdim; j++) {
-                    mass[j] = static_cast<unsigned char>(massb[j]);
-                }
-                j1++;
-                j2 = j1;
-                if (j1 % report_every == 0) {
-                    cout << j1 / (0.01 * vecsize) << " %, "
-                         << report_every / (1000.0 * 1e-6 * stopw.getElapsedTimeMicro()) << " kips " << " Mem: "
-                         << getCurrentRSS() / 1000000 << " Mb \n";
-                    stopw.reset();
-                }
-            }
-            appr_alg->addPoint((void *) (mass), (size_t) j2);
-        }
-        input.close();
-        cout << "Build time:" << 1e-6 * stopw_full.getElapsedTimeMicro() << "  seconds\n";
-        appr_alg->saveIndex(path_index);
+//         appr_alg->addPoint((void *) (mass), (size_t) 0);
+//         int j1 = 0;
+//         StopW stopw = StopW();
+//         StopW stopw_full = StopW();
+//         size_t report_every = 100000;
+// #pragma omp parallel for
+//         for (int i = 1; i < vecsize; i++) {
+//             unsigned char mass[vecdim];
+//             int j2 = 0;
+// #pragma omp critical
+//             {
+//                 input.read((char *) &in, 4);
+//                 if (in != 128) {
+//                     cout << "file error";
+//                     exit(1);
+//                 }
+//                 input.read((char *) massb, in * 4);
+//                 for (int j = 0; j < vecdim; j++) {
+//                     mass[j] = static_cast<unsigned char>(massb[j]);
+//                 }
+//                 j1++;
+//                 j2 = j1;
+//                 if (j1 % report_every == 0) {
+//                     cout << j1 / (0.01 * vecsize) << " %, "
+//                          << report_every / (1000.0 * 1e-6 * stopw.getElapsedTimeMicro()) << " kips " << " Mem: "
+//                          << getCurrentRSS() / 1000000 << " Mb \n";
+//                     stopw.reset();
+//                 }
+//             }
+//             appr_alg->addPoint((void *) (mass), (size_t) j2);
+//         }
+//         input.close();
+//         cout << "Build time:" << 1e-6 * stopw_full.getElapsedTimeMicro() << "  seconds\n";
+//         appr_alg->saveIndex(path_index);
     }
 
-
-    vector<std::priority_queue<std::pair<int, labeltype >>> answers;
-    size_t k = ext_k;
-    cout << "Parsing gt:\n";
-    get_gt(massQA, massQ, mass, vecsize, qsize, l2space, vecdim, answers, k);
-    cout << "Loaded gt\n";
-    test_vs_recall(massQ, vecsize, qsize, *appr_alg, vecdim, answers, k);
+    test_vs_recall(query_load, vecsize, qsize, *appr_alg, vecdim, gt);
     cout << "Actual memory usage: " << getCurrentRSS() / 1000000 << " Mb \n";
     return;
 }

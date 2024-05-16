@@ -10,7 +10,7 @@
 #include <list>
 #include <memory>
 
-extern long long node_counter;
+// extern long long node_counter;
 
 namespace hnswlib {
 typedef unsigned int tableint;
@@ -335,8 +335,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
             }
             candidate_set.emplace(-dist, ep_id);
 
-            #pragma omp atomic
-            node_counter++;
+            // #pragma omp atomic
+            // node_counter++;
 
         } else {
             lowerBound = std::numeric_limits<dist_t>::max();
@@ -394,8 +394,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                     char *currObj1 = (getDataByInternalId(candidate_id));
                     dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
-                    #pragma omp atomic
-                    node_counter++;
+                    // #pragma omp atomic
+                    // node_counter++;
 
                     bool flag_consider_candidate;
                     if (!bare_bone_search && stop_condition) {

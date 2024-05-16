@@ -1,26 +1,25 @@
 #include <iostream>
 
-int ext_M, ext_ef_construction, ext_ef, ext_k, ext_omp, ext_interq_multithread, ext_batch_size;
-std::string ext_dataset_path;
+int ext_ef, ext_omp, ext_interq_multithread, ext_batch_size;
+char* ext_dataset;
+std::string ext_hnsw_index_file;
 
-void sift_test1M();
+void hnsw_search();
 
 int main(int argc, char** argv) {
-    if (argc != 9) {
-        std::cout << "Usage: ./main <M> <ef_construction> <ef> <k> <omp> <interq_multithread> <batch_size> <dataset_path>" << std::endl;
+    if (argc != 7) {
+        std::cout << "Usage: ./main <dataset> <hnsw_index_file> <ef> <omp> <interq_multithread> <batch_size>" << std::endl;
         return 1;
     }
 
-    ext_M = atoi(argv[1]);
-    ext_ef_construction = atoi(argv[2]);
+    ext_dataset = argv[1];
+    ext_hnsw_index_file = argv[2];
     ext_ef = atoi(argv[3]);
-    ext_k = atoi(argv[4]);
-    ext_omp = atoi(argv[5]);
-    ext_interq_multithread = atoi(argv[6]);
-    ext_batch_size = atoi(argv[7]);
-    ext_dataset_path = argv[8];
+    ext_omp = atoi(argv[4]);
+    ext_interq_multithread = atoi(argv[5]);
+    ext_batch_size = atoi(argv[6]);
 
-    sift_test1M();
+    hnsw_search();
     
     return 0;
 }

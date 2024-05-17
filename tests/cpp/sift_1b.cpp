@@ -20,11 +20,16 @@ double calculate_recall(std::vector<std::vector<unsigned>>& I, std::vector<std::
     assert(gt[0].size() >= k);
     int nq = I.size();
     int total_intersect = 0;
-    for (int i = 0; i < nq; ++i) {
-        std::vector<int> intersection;
-        std::set_intersection(I[i].begin(), I[i].begin() + k, gt[i].begin(), gt[i].begin() + k, std::back_inserter(intersection));
-        int n_intersect = intersection.size();
-        total_intersect += n_intersect;
+
+    for (int i = 0; i < nq; i++) {
+        for (int j = 0; j < k; j++) {
+            for (int t = 0; t < k; t++) {
+                if (I[i][j] == gt[i][t]) {
+                    total_intersect++;
+                    break;
+                }
+            }
+        }
     }
     return static_cast<double>(total_intersect) / (nq * k);
 }
@@ -214,16 +219,6 @@ test_approx(
             res[i].pop();
         }
     }
-
-    // // print I[0]
-    // for (int i = 0; i < I[0].size(); i++) {
-    //     std::cout << I[0][i] << " ";
-    // }
-    // // print answers[0]
-    // std::cout << "\n\n\n";
-    // for (int i = 0; i < answers[0].size(); i++) {
-    //     std::cout << answers[0][i] << " ";
-    // }
 
     double recall_1, recall_10;
     if (ext_ef < 10) {

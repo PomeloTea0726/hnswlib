@@ -16,9 +16,10 @@ extern char* ext_dataset;
 extern std::string ext_hnsw_index_prefix;
 extern std::string ext_res_path;
 long long node_counter = 0;
+long long total_counter = 0;
 double sum_recall_1, sum_recall_10;
 
-double calculate_recall(std::vector<std::vector<unsigned>>& I, std::vector<std::vector<unsigned>>& gt, int k) {
+double calculate_recall(std::vector<std::vector<std::pair<float, unsigned>>>& I, std::vector<std::vector<unsigned>>& gt, int k) {
     assert(I[0].size() >= k);
     assert(gt[0].size() >= k);
     int nq = I.size();
@@ -27,7 +28,7 @@ double calculate_recall(std::vector<std::vector<unsigned>>& I, std::vector<std::
     for (int i = 0; i < nq; i++) {
         for (int j = 0; j < k; j++) {
             for (int t = 0; t < k; t++) {
-                if (I[i][j] == gt[i][t]) {
+                if (I[i][j].second == gt[i][t]) {
                     total_intersect++;
                     break;
                 }
@@ -187,7 +188,7 @@ test_approx(
     }
     
     // cout << "qsize divided into " << qsize / ext_batch_size << " batches\n";
-    // cout << "node counter for each batch:\n";
+    cout << "node counter for each partition:\n";
 
     StopW stopw_batch = StopW();
     std::vector<std::priority_queue<std::pair<float, hnswlib::labeltype>>> res(qsize);
@@ -213,14 +214,16 @@ test_approx(
             float time_us_batch = stopw_batch.getElapsedTimeMicro();
             // total_time += time_us_batch;
             // cout << time_us_batch << " us\n";
+            cout << node_counter / qsize << "\n";
+            total_counter += node_counter;
         }
     
     // reverse the priority queue and store the result in I
-    std::vector<std::vector<unsigned>> I(qsize, std::vector<unsigned>(10));
+    std::vector<std::vector<std::pair<float, unsigned>>> I(qsize, std::vector<std::pair<float, unsigned>>(10));
     for (int i = 0; i < qsize; i++) {
         assert(res[i].size() == 10);
         for (int j = 0; j < 10; j++) {
-            I[i][10 - 1 - j] = res[i].top().second;
+            I[i][10 - 1 - j] = res[i].top();
             res[i].pop();
         }
     }
@@ -230,7 +233,7 @@ test_approx(
     std::ofstream output(filename);
     for (int i = 0; i < qsize; i++) {
         for (int j = 0; j < 10; j++) {
-            output << I[i][j] << " ";
+            output << I[i][j].first << " " << I[i][j].second << " ";
         }
         output << std::endl;
     }
@@ -338,6 +341,7 @@ void hnsw_search() {
 
     HierarchicalNSW<float> *appr_algs[ext_sub_graph_num];
     for (int i = 0; i < ext_sub_graph_num; i++) {
+        node_counter = 0;
         cout << "Starts HNSW search on sub-graph: " << i << endl;
         std::string hnsw_index_file = ext_hnsw_index_prefix + "_" + std::to_string(i) + ".bin";
         if (exists_test(hnsw_index_file)) {
@@ -401,7 +405,7 @@ void hnsw_search() {
         std::cout << "Actual memory usage: " << getCurrentRSS() / 1000000 << " Mb \n";
     }
 
-    std::cout << "node counter per query: " << node_counter / qsize << std::endl;
+    std::cout << "total node counter per query: " << total_counter / qsize << std::endl;
 
     // if (ext_ef < 10) {
     //     std::cout << "sum_recall_1: " << sum_recall_1 << std::endl;

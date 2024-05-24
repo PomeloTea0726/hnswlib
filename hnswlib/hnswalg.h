@@ -388,12 +388,12 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
                                 _MM_HINT_T0);  ////////////
 #endif
-                
-                #pragma omp atomic
-                node_counter++;
 
                 if (!(visited_array[candidate_id] == visited_array_tag)) {
                     visited_array[candidate_id] = visited_array_tag;
+
+                    #pragma omp atomic
+                    node_counter++;
 
                     char *currObj1 = (getDataByInternalId(candidate_id));
                     dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);

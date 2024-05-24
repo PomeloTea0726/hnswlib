@@ -18,7 +18,7 @@ void load_data_ivecs(const char* filename, std::vector<std::vector<unsigned>>& d
 
 /* SIFT1B base | query */
 void load_data_bvecs(const char* filename, float*& data,
-               unsigned& dim, unsigned num) { // load given num of vecs
+               unsigned& dim, unsigned num, unsigned N_offset) { // load given num of vecs
   std::ifstream in(filename, std::ios::binary);
   if (!in.is_open()) {
     std::cout << "open file error" << std::endl;
@@ -27,7 +27,10 @@ void load_data_bvecs(const char* filename, float*& data,
   in.read((char*)&dim, 4);
   data = new float[(size_t)num * (size_t)dim];
 
-  in.seekg(0, std::ios::beg);
+  // skip N_offset vecs
+  uint64_t offset_bytes = (uint64_t)(dim + 4) * N_offset;
+  in.seekg(offset_bytes, std::ios::beg);
+  
   for (size_t i = 0; i < num; i++) {
     in.seekg(4, std::ios::cur);
     for (size_t j = 0; j < dim; j++) {

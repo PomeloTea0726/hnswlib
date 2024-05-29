@@ -90,3 +90,26 @@ void load_data_deep_fbin(const char* filename, float*& data, unsigned num) { // 
   }
   in.close();
 }
+
+/* SPACEV base | query */
+void load_data_spacev(const char* filename, float*& data, unsigned num) { // load given num of vecs
+  std::ifstream in(filename, std::ios::binary);
+  if (!in.is_open()) {
+    std::cout << "open file error" << std::endl;
+    exit(-1);
+  }
+  in.seekg(4, std::ios::cur);
+  int dim;
+  in.read((char *) &dim, 4);
+  data = new float[(size_t)num * (size_t)dim];
+
+  int8_t temp;
+  for (size_t i = 0; i < num; i++) {
+    for (size_t j = 0; j < dim; j++) {
+      in.read((char*)&temp, sizeof(int8_t));
+      data[i * dim + j] = (float)temp;
+    }
+  }
+
+  in.close();
+}

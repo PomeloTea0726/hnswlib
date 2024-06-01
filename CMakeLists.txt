@@ -103,6 +103,6 @@ if(HNSWLIB_EXAMPLES)
     add_executable(main tests/cpp/main.cpp tests/cpp/sift_1b.cpp)
     target_link_libraries(main hnswlib)
 
-    add_executable(bruteforce_test tests/cpp/bruteforce_test.cpp)
-    target_link_libraries(bruteforce_test hnswlib)
+    add_executable(inf_search tests/cpp/main.cpp tests/cpp/sift_1b_inf.cpp)
+    target_link_libraries(inf_search hnswlib)
 endif()

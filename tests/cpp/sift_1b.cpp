@@ -15,13 +15,15 @@ extern int ext_ef, ext_omp, ext_interq_multithread, ext_batch_size;
 extern char* ext_dataset;
 extern std::string ext_hnsw_index_file;
 
-double calculate_recall(std::vector<std::vector<unsigned>>& I, std::vector<std::vector<unsigned>>& gt, int k) {
+double calculate_recall(std::vector<std::vector<unsigned>>& I, std::vector<std::vector<unsigned>>& gt, int k, int bs) {
     assert(I[0].size() >= k);
     assert(gt[0].size() >= k);
     int nq = I.size();
     int total_intersect = 0;
 
-    for (int i = 0; i < nq; i++) {
+    int valid_Nquery = (nq / bs) * bs;
+
+    for (int i = 0; i < valid_Nquery; i++) {
         for (int j = 0; j < k; j++) {
             for (int t = 0; t < k; t++) {
                 if (I[i][j] == gt[i][t]) {
@@ -31,7 +33,7 @@ double calculate_recall(std::vector<std::vector<unsigned>>& I, std::vector<std::
             }
         }
     }
-    return static_cast<double>(total_intersect) / (nq * k);
+    return static_cast<double>(total_intersect) / (valid_Nquery * k);
 }
 
 
@@ -177,10 +179,10 @@ test_approx(
     size_t vecdim,
     std::vector<std::vector<unsigned>> &answers) {
 
-    if (qsize % ext_batch_size != 0) {
-        cout << "qsize must be divisible by batch size\n";
-        exit(1);
-    }
+    // if (qsize % ext_batch_size != 0) {
+    //     cout << "qsize must be divisible by batch size\n";
+    //     exit(1);
+    // }
     
     cout << "qsize divided into " << qsize / ext_batch_size << " batches\n";
     cout << "time for each batch:\n";
@@ -189,7 +191,7 @@ test_approx(
     std::vector<std::priority_queue<std::pair<float, hnswlib::labeltype>>> res(qsize);
     float total_time = 0.0;
     if (ext_omp)
-        for (int j = 0; j < qsize; j+=ext_batch_size) {
+        for (int j = 0; j <= qsize - ext_batch_size; j+=ext_batch_size) {
             stopw_batch.reset();
             #pragma omp parallel for num_threads(ext_interq_multithread) schedule(dynamic)
             for (int i = j; i < j + ext_batch_size; i++) {
@@ -201,7 +203,7 @@ test_approx(
         }
 
     else
-        for (int j = 0; j < qsize; j+=ext_batch_size) {
+        for (int j = 0; j <= qsize - ext_batch_size; j+=ext_batch_size) {
             stopw_batch.reset();
             for (int i = j; i < j + ext_batch_size; i++) {
                 res[i] = appr_alg.searchKnn(massQ + vecdim * i, ext_ef);
@@ -212,8 +214,9 @@ test_approx(
         }
     
     // reverse the priority queue and store the result in I
+    int valid_Nquery = (qsize / ext_batch_size) * ext_batch_size;
     std::vector<std::vector<unsigned>> I(qsize, std::vector<unsigned>(ext_ef));
-    for (int i = 0; i < qsize; i++) {
+    for (int i = 0; i < valid_Nquery; i++) {
         for (int j = 0; j < ext_ef; j++) {
             I[i][ext_ef - 1 - j] = res[i].top().second;
             res[i].pop();
@@ -222,12 +225,12 @@ test_approx(
 
     double recall_1, recall_10;
     if (ext_ef < 10) {
-        recall_1 = calculate_recall(I, answers, 1);
+        recall_1 = calculate_recall(I, answers, 1, ext_batch_size);
         std::cout << "recall_1: " << recall_1 << std::endl;
     }
     else {
-        recall_1 = calculate_recall(I, answers, 1);
-        recall_10 = calculate_recall(I, answers, 10);
+        recall_1 = calculate_recall(I, answers, 1, ext_batch_size);
+        recall_10 = calculate_recall(I, answers, 10, ext_batch_size);
         std::cout << "recall_1: " << recall_1 << std::endl;
         std::cout << "recall_10: " << recall_10 << std::endl;
     }

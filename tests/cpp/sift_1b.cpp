@@ -300,23 +300,21 @@ void hnsw_search() {
     //     load_data_ivecs("/mnt/scratch/wenqi/Faiss_experiments/bigann/gnd/idx_10M.ivecs", gt, query_num);
     // }
     // else if (strcmp(ext_dataset, "SBERT1M") == 0) {
-    //     points_num = 1e6;
-    //     load_data_SBERT("/mnt/scratch/wenqi/Faiss_experiments/sbert/sbert1M.fvecs", data_load, points_num);
+    //     points_num = 1e6 / (double)ext_sub_graph_num;
     //     dim = 384;
     //     query_num = 1e4;
     //     load_data_SBERT("/mnt/scratch/wenqi/Faiss_experiments/sbert/query_10K.fvecs", query_load, query_num);
     //     query_dim = 384;
     //     load_data_deep_ibin("/mnt/scratch/wenqi/Faiss_experiments/sbert/gt_idx_1M.ibin", gt, query_num);
     // }
-    // else if (strcmp(ext_dataset, "Deep1M") == 0) {
-    //     points_num = 1e6;
-    //     load_data_deep_fbin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/base.1B.fbin", data_load, points_num);
-    //     dim = 96;
-    //     query_num = 1e4;
-    //     load_data_deep_fbin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/query.public.10K.fbin", query_load, query_num);
-    //     query_dim = 96;
-    //     load_data_deep_ibin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/gt_idx_1M.ibin", gt, query_num);
-    // }
+    else if (strcmp(ext_dataset, "Deep1M") == 0) {
+        points_num = 1e6 / (double)ext_sub_graph_num;
+        dim = 96;
+        query_num = 1e4;
+        load_data_deep_fbin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/query.public.10K.fbin", query_load, query_num);
+        query_dim = 96;
+        load_data_deep_ibin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/gt_idx_1M.ibin", gt, query_num);
+    }
     // else if (strcmp(ext_dataset, "Deep10M") == 0) {
     //     points_num = 1e7;
     //     load_data_deep_fbin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/base.1B.fbin", data_load, points_num);
@@ -326,6 +324,14 @@ void hnsw_search() {
     //     query_dim = 96;
     //     load_data_deep_ibin("/mnt/scratch/wenqi/Faiss_experiments/deep1b/gt_idx_10M.ibin", gt, query_num);
     // }
+    else if (strcmp(ext_dataset, "SPACEV1M") == 0) {
+    points_num = 1e6 / (double)ext_sub_graph_num;
+    dim = 100;
+    query_num = 1e4;
+    load_data_spacev("/mnt/scratch/wenqi/Faiss_experiments/SPACEV/query_10K.bin", query_load, query_num);
+    query_dim = 100;
+    load_data_deep_ibin("/mnt/scratch/wenqi/Faiss_experiments/SPACEV/gt_idx_1M.ibin", gt, query_num);
+    }
     else {
         std::cout << "Unknown dataset" << std::endl;
         exit(-1);

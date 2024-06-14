@@ -100,9 +100,9 @@ if(HNSWLIB_EXAMPLES)
     # add_executable(multiThread_replace_test tests/cpp/multiThread_replace_test.cpp)
     # target_link_libraries(multiThread_replace_test hnswlib)
 
-    add_executable(main tests/cpp/main.cpp tests/cpp/sift_1b.cpp)
+    add_executable(main tests/cpp/main_subgraph.cpp tests/cpp/subgraph.cpp)
     target_link_libraries(main hnswlib)
 
-    add_executable(bruteforce_test tests/cpp/bruteforce_test.cpp)
-    target_link_libraries(bruteforce_test hnswlib)
+    # add_executable(bruteforce_test tests/cpp/bruteforce_test.cpp)
+    # target_link_libraries(bruteforce_test hnswlib)
 endif()

@@ -335,13 +335,15 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
             }
             candidate_set.emplace(-dist, ep_id);
 
-            // #pragma omp atomic
-            // node_counter++;
-
         } else {
             lowerBound = std::numeric_limits<dist_t>::max();
             candidate_set.emplace(-lowerBound, ep_id);
         }
+
+        #ifdef SUBGRAPH
+        #pragma omp atomic
+        node_counter++;
+        #endif
 
         visited_array[ep_id] = visited_array_tag;
 
@@ -388,14 +390,17 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
                                 _MM_HINT_T0);  ////////////
 #endif
+
                 if (!(visited_array[candidate_id] == visited_array_tag)) {
                     visited_array[candidate_id] = visited_array_tag;
 
+                    #ifdef SUBGRAPH
+                    #pragma omp atomic
+                    node_counter++;
+                    #endif
+
                     char *currObj1 = (getDataByInternalId(candidate_id));
                     dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
-
-                    // #pragma omp atomic
-                    // node_counter++;
 
                     bool flag_consider_candidate;
                     if (!bare_bone_search && stop_condition) {

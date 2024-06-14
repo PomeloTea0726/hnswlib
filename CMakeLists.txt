@@ -100,9 +100,16 @@ if(HNSWLIB_EXAMPLES)
     # add_executable(multiThread_replace_test tests/cpp/multiThread_replace_test.cpp)
     # target_link_libraries(multiThread_replace_test hnswlib)
 
+    add_executable(subgraph tests/cpp/main_subgraph.cpp tests/cpp/subgraph.cpp)
+    target_link_libraries(subgraph hnswlib)
+    target_compile_definitions(subgraph PRIVATE SUBGRAPH)
+
     add_executable(main tests/cpp/main.cpp tests/cpp/sift_1b.cpp)
     target_link_libraries(main hnswlib)
 
     add_executable(inf_search tests/cpp/main.cpp tests/cpp/sift_1b_inf.cpp)
     target_link_libraries(inf_search hnswlib)
+
+    # add_executable(bruteforce_test tests/cpp/bruteforce_test.cpp)
+    # target_link_libraries(bruteforce_test hnswlib)
 endif()
